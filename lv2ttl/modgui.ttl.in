@@ -1,0 +1,17 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+
+<https://ca9.eu/lv2/bollie-echopeck>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/bollie-echopeck.html> ;
+        modgui:stylesheet <modgui/bollie-echopeck.css> ;
+        modgui:javascript <modgui/bollie-echopeck.js> ;
+        modgui:screenshot <modgui/screenshot-bollie-echopeck.png> ;
+        modgui:thumbnail <modgui/thumbnail-bollie-echopeck.png> ;
+        modgui:brand "Bollie" ;
+        modgui:label "Echopeck" ;
+        modgui:monitoredOutputs [
+            lv2:symbol "level_indicator" ;
+        ] ; 
+    ] .

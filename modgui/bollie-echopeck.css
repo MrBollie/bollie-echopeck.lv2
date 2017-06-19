@@ -1,0 +1,123 @@
+@import url(/fonts/nexa/stylesheet.css);
+@import url(/fonts/questrial/stylesheet.css);
+
+
+/* = CONTAINER
+================================================ */
+.bollie-echopeck {
+    background-image:url(/resources/background.png{{{ns}}});
+    background-position:center center;
+    background-repeat:no-repeat;
+    background-size:650px 220px;
+    border-radius: 21px;
+    height:220px;
+    position:absolute;
+    width:650px;
+    text-align: center;
+}
+
+/* = Labels
+================================================ */
+
+/* = LIGHT ON/OFF
+================================================ */
+.bollie-echopeck .mod-light {
+    background-position:center center;
+    background-repeat:no-repeat;
+    top:45px;
+    height:32px;
+    width:32px;
+    left:330px;
+    position:absolute;
+}
+
+/* = FOOTSWITCH
+================================================ */
+.bollie-echopeck .mod-footswitch {
+    margin: 4px auto 0 auto;
+    position: absolute;
+    background-image:url(/resources/toggle.png{{{ns}}});
+    background-position:bottom center;
+    background-repeat:no-repeat;
+    background-size:auto 120px;
+    cursor:pointer;
+    height: 60px;
+    width: 43px;
+    margin: 4px auto 0 auto;
+    z-index: 20;
+    top: 27px;
+    left: 275px;
+}
+
+.bollie-echopeck .mod-footswitch.on {
+    background-position: top center !important;
+}
+
+/* = KNOBS
+================================================ */
+.bollie-echopeck .mod-knob .mod-knob-image {
+    background-image:url(/resources/bollie-echopeck-pot.png{{{ns}}});
+    background-repeat:no-repeat;
+    background-size:auto 76px;
+    height:76px;
+    width:76px;
+    margin:0 auto;
+}
+
+.bollie-echopeck .mod-knob .mod-knob-image-rot-switch {
+    background-image:url(/resources/bollie-echopeck-rot-switch.png{{{ns}}});
+    background-repeat:no-repeat;
+    background-size:auto 76px;
+    height:76px;
+    width:76px;
+    margin:0 auto;
+}
+
+.bollie-echopeck .mod-knob .mod-knob-image-rot-mode {
+    background-image:url(/resources/bollie-echopeck-rot-mode.png{{{ns}}});
+    background-repeat:no-repeat;
+    background-size:auto 76px;
+    height:76px;
+    width:76px;
+    margin:0 auto;
+}
+
+.bollie-echopeck .mod-knob {
+    display:inline-block;
+    height:77px;
+    width:77px;
+    margin:1px 1px;
+    overflow:hidden;
+    position:absolute;
+    z-index: 20;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=input_control] {
+    top: 91px;
+    left: 30px;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=length_of_swell] {
+    top: 91px;
+    left: 110px;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=volume] {
+    top: 91px;
+    left: 190px;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=bass_treble] {
+    top: 91px;
+    left: 368px;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=selector] {
+    top: 91px;
+    left: 450px;
+}
+
+.bollie-echopeck div.mod-knob[bollie-id=switch] {
+    top: 91px;
+    left: 536px;
+}
