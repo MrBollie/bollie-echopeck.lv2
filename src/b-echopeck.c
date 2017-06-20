@@ -23,7 +23,7 @@
 * \date 19 Jun 2017
 * \brief An LV2 echo plugin
 */
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <sys/time.h>
@@ -32,7 +32,8 @@
 
 #define URI "https://ca9.eu/lv2/bollie-echopeck"
 
-#define MAX_TAPE_LEN 1920001
+#define MAX_TAPE_LEN 192001
+#define DELAY_MS 75
 
 
 /**
@@ -56,6 +57,13 @@ typedef enum {
     BEP_LEVEL_INDICATOR = 8
 } PortIdx;
 
+typedef struct {
+    float   pos;
+    float   cur_gain;
+    float   tgt_gain;
+    float   delay;
+} PlayHead;
+
 /**
 * Struct for THE BollieEchopeck instance, the host is going to use.
 */
@@ -72,7 +80,15 @@ typedef struct {
 
     double rate;                        ///< Current sample rate
 
-    float buffer[MAX_TAPE_LEN];     ///< delay buffer
+    PlayHead playheads[4];              ///< The playheads
+    int pos_w;                          ///< Position of the write head
+
+    float buffer[MAX_TAPE_LEN];         ///< delay buffer
+
+    double lfo_x;                       ///< LFO increment
+
+    float cur_length_of_swell;          ///< Current feedback
+    float tgt_length_of_swell;          ///< Current feedback
 } BollieEchopeck;
 
 
@@ -144,6 +160,15 @@ static void activate(LV2_Handle instance) {
     for (int i = 0 ; i < MAX_TAPE_LEN ; ++i) {
         self->buffer[i] = 0;
     }
+    self->pos_w = 0;
+
+    // Set up delay times
+    for (int i = 0 ; i < 4 ; ++i) {
+        self->playheads[i].delay = (i+1.0f) * DELAY_MS/1000 * self->rate;
+        self->playheads[i].pos = 0;
+    }
+    self->lfo_x = 0;
+    self->cur_length_of_swell = 0;
 }
 
 
@@ -155,10 +180,73 @@ static void activate(LV2_Handle instance) {
 static void run(LV2_Handle instance, uint32_t n_samples) {
     BollieEchopeck* self = (BollieEchopeck*)instance;
 
+    // Pull stuff from heap
+    int pos_w = self->pos_w;
+    double rate = self->rate;
+    double lfo_x = self->lfo_x;
+
+    // Length of Swell
+    float cur_length_of_swell = self->cur_length_of_swell;
+    float tgt_length_of_swell = 0;
+    const float ctl_length_of_swell = *self->ctl_length_of_swell;
+    if (ctl_length_of_swell > 0 && ctl_length_of_swell < 10) {
+        tgt_length_of_swell = powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
+    }
+    else if (ctl_length_of_swell == 10) {
+        tgt_length_of_swell = 1;
+    }
+
     // Loop over the block of audio we got
     for (unsigned int i = 0 ; i < n_samples ; ++i) {
-        self->output[i] = self->input[i];
+        float sample_in = self->input[i];
+        float sample_out = 0;
+
+        // Parameter smoothing
+        cur_length_of_swell = tgt_length_of_swell * 0.01f 
+            + cur_length_of_swell *0.99f;
+
+        // LFO
+        float lfo_offset = 0.5f * sin(200 * (2* M_PI) * lfo_x / rate);
+        lfo_x = lfo_x + 1 >= rate ? 0 : lfo_x+1;
+
+        // Playback Heads
+        for (unsigned int h = 0 ; h < 4 ; ++h) {
+            float out = 0;
+            float d = self->playheads[h].delay;
+            float x = (float)pos_w - d;
+            x += lfo_offset;
+            if (x < 0) {
+                x = MAX_TAPE_LEN-1 + x;
+                //if (h==0) printf("x overflow: %.2f\n", x);
+            }
+            self->playheads[h].pos = x;
+
+            // Calculate fraction
+            double x1, frac;
+            frac = modf(x, &x1);
+            if (frac == 0) {
+               out = self->buffer[(int)x1]; 
+            }
+            else {
+                // Rule out edge cases
+                float y1 = self->buffer[(int)x1];
+                int x2 = (int)x1+1;
+                float y2 = self->buffer[x2 >= MAX_TAPE_LEN ? 0 : x2];
+                out = y1 + (y2-y1)/(x2-x1) * (x-x1);
+            }
+            sample_out += out * 0.4f;
+        }
+        
+        // constantly write to the buffer
+        self->buffer[pos_w] = sample_in + sample_out * cur_length_of_swell;
+
+        self->output[i] = self->input[i] + sample_out;
+        pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
     }
+    printf("Swell: %.2f\n", cur_length_of_swell);
+    self->cur_length_of_swell = cur_length_of_swell;
+    self->pos_w = pos_w;
+    self->lfo_x = lfo_x;
 
 }
 
