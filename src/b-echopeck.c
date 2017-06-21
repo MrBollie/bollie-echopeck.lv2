@@ -34,6 +34,7 @@
 
 #define MAX_TAPE_LEN 192001
 #define DELAY_MS 75
+#define WOW 1.5
 
 
 /**
@@ -322,14 +323,15 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             + cur_trim_dry *0.99f;
 
         // LFO
-        float lfo_offset = 0.1f * sin(2 * (2* M_PI) * lfo_x / rate);
+        float w = WOW/1000 * rate;
+        float lfo_offset = w * sin(2 * (2* M_PI) * lfo_x / rate);
         lfo_x = lfo_x + 1 >= rate ? 0 : lfo_x+1;
 
         // Playback Heads
         for (unsigned int h = 0 ; h < 4 ; ++h) {
             // Parameter smoothing for head gain coeff
             self->playheads[h].cur_gain = self->playheads[h].tgt_gain * 0.01f
-                + self->playheads[h].tgt_gain * 0.99f;
+                + self->playheads[h].cur_gain * 0.99f;
 
             float out = 0;
             float d = self->playheads[h].delay;
