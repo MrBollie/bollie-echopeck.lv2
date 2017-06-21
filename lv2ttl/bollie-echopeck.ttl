@@ -124,6 +124,15 @@
         lv2:default 0 ;
         lv2:minimum 0 ;
         lv2:maximum 1 ;
+    ] , [
+        a lv2:InputPort ,
+            lv2:ControlPort ;
+        lv2:index 9 ;
+        lv2:symbol "trim_dry" ;
+        lv2:name "TRIM DRY";
+        lv2:default 9 ;
+        lv2:minimum 0 ;
+        lv2:maximum 10 ;
     ] ;
     rdfs:comment '''A try to emulate a certain echo effect.
     Enjoy! :-) And feedback is always welcome.''' .

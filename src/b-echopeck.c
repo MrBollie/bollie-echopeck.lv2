@@ -54,7 +54,8 @@ typedef enum {
     BEP_SWITCH          = 5,
     BEP_INPUT           = 6,
     BEP_OUTPUT          = 7,
-    BEP_LEVEL_INDICATOR = 8
+    BEP_LEVEL_INDICATOR = 8,
+    BEP_TRIM_DRY        = 9
 } PortIdx;
 
 typedef struct {
@@ -75,6 +76,7 @@ typedef struct {
     const float* ctl_selector;          ///< Selector
     const float* ctl_switch;            ///< Switch
     float* ctl_level_indicator;         ///< Output for level indicator
+    const float* ctl_trim_dry;          ///< Dry signal trimming
     const float* input;                 ///< Input port
     float* output;                      ///< Output port
 
@@ -89,6 +91,18 @@ typedef struct {
 
     float cur_length_of_swell;          ///< Current feedback
     float tgt_length_of_swell;          ///< Current feedback
+
+    float cur_volume;                   ///< Volume
+    float tgt_volume;                   ///< Volume
+
+    float cur_switch;                   ///< Current switch value
+
+    float cur_trim_dry;                 ///< Dry volume trimmer
+    float tgt_trim_dry;                 ///< Dry volume trimmer
+
+    float fil_a0;                       ///< a0 for feedback filter
+    float fil_b1;                       ///< a0 for feedback filter
+    float fil_z1;                       ///< a0 for feedback filter
 } BollieEchopeck;
 
 
@@ -146,6 +160,9 @@ static void connect_port(LV2_Handle instance, uint32_t port, void *data) {
         case BEP_LEVEL_INDICATOR:
             self->ctl_level_indicator = data;
             break;
+        case BEP_TRIM_DRY:
+            self->ctl_trim_dry = data;
+            break;
     }
 }
     
@@ -169,6 +186,70 @@ static void activate(LV2_Handle instance) {
     }
     self->lfo_x = 0;
     self->cur_length_of_swell = 0;
+    self->cur_switch = 0;
+    self->cur_trim_dry = 0;
+
+    self->fil_b1 = exp(-2.0 * M_PI * 8000);
+    self->fil_a0 = 1.0 - self->fil_b1;
+    self->fil_z1 = 0.0f;
+}
+
+static void switch_heads(BollieEchopeck* self, int sw) {
+    for (int i = 0 ; i < 4 ; ++i) {
+        self->playheads[i].tgt_gain = 0;
+    }
+
+    switch(sw) {
+        case 1:
+            self->playheads[0].tgt_gain = 1;
+            break;
+        case 2:
+            self->playheads[1].tgt_gain = 1;
+            break;
+        case 3:
+            self->playheads[2].tgt_gain = 1;
+            break;
+        case 4:
+            self->playheads[3].tgt_gain = 1;
+            break;
+        case 5:
+            self->playheads[0].tgt_gain = 1;
+            self->playheads[1].tgt_gain = 1;
+            break;
+        case 6:
+            self->playheads[1].tgt_gain = 1;
+            self->playheads[2].tgt_gain = 1;
+            break;
+        case 7:
+            self->playheads[2].tgt_gain = 1;
+            self->playheads[3].tgt_gain = 1;
+            break;
+        case 8:
+            self->playheads[0].tgt_gain = 1;
+            self->playheads[2].tgt_gain = 1;
+            break;
+        case 9:
+            self->playheads[1].tgt_gain = 1;
+            self->playheads[3].tgt_gain = 1;
+            break;
+        case 10:
+            self->playheads[0].tgt_gain = 1;
+            self->playheads[1].tgt_gain = 1;
+            self->playheads[2].tgt_gain = 1;
+            break;
+        case 11:
+            self->playheads[1].tgt_gain = 1;
+            self->playheads[2].tgt_gain = 1;
+            self->playheads[3].tgt_gain = 1;
+            break;
+        case 12:
+            self->playheads[0].tgt_gain = 1;
+            self->playheads[1].tgt_gain = 1;
+            self->playheads[2].tgt_gain = 1;
+            self->playheads[3].tgt_gain = 1;
+            break;
+            
+    }
 }
 
 
@@ -185,6 +266,13 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     double rate = self->rate;
     double lfo_x = self->lfo_x;
 
+    // Current switch setting
+    if (*self->ctl_switch != self->cur_switch) {
+        float s = *self->ctl_switch;
+        if (s < 1 || s > 12) s = 1;
+        switch_heads(self, *self->ctl_switch);
+    }
+
     // Length of Swell
     float cur_length_of_swell = self->cur_length_of_swell;
     float tgt_length_of_swell = 0;
@@ -196,6 +284,28 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         tgt_length_of_swell = 1;
     }
 
+    // Volume
+    float cur_volume = self->cur_volume;
+    float tgt_volume = 0;
+    const float ctl_volume = *self->ctl_volume;
+    if (ctl_volume > 0 && ctl_volume < 10) {
+        tgt_volume = powf(10.0f, (ctl_volume-10) * 0.2f);
+    }
+    else if (ctl_volume == 10) {
+        tgt_volume = 1;
+    }
+
+    // Volume
+    float cur_trim_dry = self->cur_trim_dry;
+    float tgt_trim_dry = 0;
+    const float ctl_trim_dry = *self->ctl_trim_dry;
+    if (ctl_trim_dry > 0 && ctl_trim_dry < 10) {
+        tgt_trim_dry = powf(10.0f, (ctl_trim_dry-10) * 0.2f);
+    }
+    else if (ctl_trim_dry == 10) {
+        tgt_trim_dry = 1;
+    }
+
     // Loop over the block of audio we got
     for (unsigned int i = 0 ; i < n_samples ; ++i) {
         float sample_in = self->input[i];
@@ -205,12 +315,22 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         cur_length_of_swell = tgt_length_of_swell * 0.01f 
             + cur_length_of_swell *0.99f;
 
+        cur_volume = tgt_volume * 0.01f 
+            + cur_volume *0.99f;
+
+        cur_trim_dry = tgt_trim_dry * 0.01f 
+            + cur_trim_dry *0.99f;
+
         // LFO
-        float lfo_offset = 0.5f * sin(200 * (2* M_PI) * lfo_x / rate);
+        float lfo_offset = 0.1f * sin(2 * (2* M_PI) * lfo_x / rate);
         lfo_x = lfo_x + 1 >= rate ? 0 : lfo_x+1;
 
         // Playback Heads
         for (unsigned int h = 0 ; h < 4 ; ++h) {
+            // Parameter smoothing for head gain coeff
+            self->playheads[h].cur_gain = self->playheads[h].tgt_gain * 0.01f
+                + self->playheads[h].tgt_gain * 0.99f;
+
             float out = 0;
             float d = self->playheads[h].delay;
             float x = (float)pos_w - d;
@@ -234,17 +354,20 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
                 float y2 = self->buffer[x2 >= MAX_TAPE_LEN ? 0 : x2];
                 out = y1 + (y2-y1)/(x2-x1) * (x-x1);
             }
-            sample_out += out * 0.4f;
+            sample_out += out * self->playheads[h].cur_gain;
         }
         
         // constantly write to the buffer
-        self->buffer[pos_w] = sample_in + sample_out * cur_length_of_swell;
+        self->fil_z1 = (sample_out * cur_length_of_swell) * self->fil_a0 
+            + self->fil_z1 * self->fil_b1;
+        self->buffer[pos_w] = sample_in + self->fil_z1;
 
-        self->output[i] = self->input[i] + sample_out;
+        self->output[i] = self->input[i] * cur_trim_dry + sample_out * cur_volume;
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
     }
-    printf("Swell: %.2f\n", cur_length_of_swell);
     self->cur_length_of_swell = cur_length_of_swell;
+    self->cur_volume = cur_volume;
+    self->cur_trim_dry = cur_trim_dry;
     self->pos_w = pos_w;
     self->lfo_x = lfo_x;
 
