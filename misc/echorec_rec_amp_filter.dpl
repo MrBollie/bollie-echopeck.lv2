@@ -1,0 +1,31 @@
+<Qucs Schematic 0.0.19>
+<Properties>
+  <View=-53,0,1436,909,1,0,0>
+  <Grid=10,10,0>
+  <DataSet=echorec_rec_amp_filter.dat>
+  <DataDisplay=echorec_rec_amp_filter.sch>
+  <OpenDisplay=1>
+  <Script=echorec_rec_amp_filter.m>
+  <RunScript=0>
+  <showFrame=0>
+  <FrameText0=Title>
+  <FrameText1=Drawn By:>
+  <FrameText2=Date:>
+  <FrameText3=Revision:>
+</Properties>
+<Symbol>
+</Symbol>
+<Components>
+</Components>
+<Wires>
+</Wires>
+<Diagrams>
+  <Rect 42 531 1347 391 3 #c0c0c0 1 10 1 0 5000 100000 1 -0.0535442 0.1 0.634794 1 -1 0.2 1 315 0 225 "" "" "">
+	<"output.v" #0000ff 0 3 0 0 0>
+  </Rect>
+  <Rect 40 813 1353 243 3 #000000 1 10 1 0 5000 100000 1 0.2 0.2 1.0646 1 -1 0.5 1 315 0 225 "" "" "">
+	<"rc1.v" #0000ff 0 3 0 0 0>
+  </Rect>
+</Diagrams>
+<Paintings>
+</Paintings>
