@@ -338,8 +338,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             float x = (float)pos_w - d;
             x += lfo_offset;
             if (x < 0) {
-                x = MAX_TAPE_LEN-1 + x;
-                //if (h==0) printf("x overflow: %.2f\n", x);
+                x = MAX_TAPE_LEN + x;
             }
             self->playheads[h].pos = x;
 
