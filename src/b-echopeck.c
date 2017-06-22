@@ -1,5 +1,5 @@
 /**
-    Bollie Echopeck - (c) 2016 Thomas Ebeling https://ca9.eu
+    Bollie Echopeck - (c) 2017 Thomas Ebeling https://ca9.eu
 
     This file is part of bollie-echopeck.lv2
 
@@ -34,7 +34,7 @@
 
 #define MAX_TAPE_LEN 192001
 #define DELAY_MS 75
-#define WOW 1.5
+#define WOW 1.0
 
 
 /**
@@ -190,7 +190,7 @@ static void activate(LV2_Handle instance) {
     self->cur_switch = 0;
     self->cur_trim_dry = 0;
 
-    self->fil_b1 = exp(-2.0 * M_PI * 8000);
+    self->fil_b1 = exp(-2.0 * M_PI * (950 / self->rate));
     self->fil_a0 = 1.0 - self->fil_b1;
     self->fil_z1 = 0.0f;
 }
@@ -359,9 +359,9 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         }
         
         // constantly write to the buffer
-        self->fil_z1 = (sample_out * cur_length_of_swell) * self->fil_a0 
-            + self->fil_z1 * self->fil_b1;
-        self->buffer[pos_w] = sample_in + self->fil_z1;
+        self->fil_z1 = (sample_out * self->fil_a0 
+            + self->fil_z1 * self->fil_b1);
+        self->buffer[pos_w] = sample_in + self->fil_z1 * cur_length_of_swell;
 
         self->output[i] = self->input[i] * cur_trim_dry + sample_out * cur_volume;
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
