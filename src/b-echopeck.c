@@ -333,6 +333,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
 
     // Current switch setting
     if (*self->ctl_switch != cur_switch) {
+        cur_switch = *self->ctl_switch;
         if (cur_switch < 1 || cur_switch > 12) 
             cur_switch = 1;
         switch_heads(self, cur_switch);
