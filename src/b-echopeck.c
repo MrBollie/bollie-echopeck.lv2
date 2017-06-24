@@ -51,20 +51,26 @@ typedef enum { false, true } bool;
 * Enumeration of LV2 ports
 */
 typedef enum {
-    BEP_INPUT_CONTROL   = 0,
-    BEP_LENGTH_OF_SWELL = 1,
-    BEP_VOLUME          = 2,
-    BEP_BASS_TREBLE     = 3,
-    BEP_SELECTOR        = 4,
-    BEP_SWITCH          = 5,
-    BEP_INPUT           = 6,
-    BEP_OUTPUT          = 7,
-    BEP_LEVEL_INDICATOR = 8,
-    BEP_TRIM_DRY        = 9
+    BEP_INPUT_CONTROL           = 0,
+    BEP_LENGTH_OF_SWELL         = 1,
+    BEP_VOLUME                  = 2,
+    BEP_BASS_TREBLE             = 3,
+    BEP_SELECTOR                = 4,
+    BEP_SWITCH                  = 5,
+    BEP_INPUT                   = 6,
+    BEP_OUTPUT                  = 7,
+    BEP_LEVEL_INDICATOR         = 8,
+    BEP_TRIM_DRY                = 9,
+    BEP_TRIM_HEAD_1             = 10,
+    BEP_TRIM_HEAD_2             = 11,
+    BEP_TRIM_HEAD_3             = 12,
+    BEP_TRIM_HEAD_4             = 13,
+    BEP_TRIM_LENGTH_OF_SWELL    = 14
 } PortIdx;
 
 typedef struct {
     float   pos;
+    const float* ctl_trim;
     float   cur_gain;
     float   tgt_gain;
     float   delay;
@@ -82,6 +88,7 @@ typedef struct {
     const float* ctl_switch;            ///< Switch
     float* ctl_level_indicator;         ///< Output for level indicator
     const float* ctl_trim_dry;          ///< Dry signal trimming
+    const float* ctl_trim_length_of_swell; ///< Length of Swell trimming
     const float* input;                 ///< Input port
     float* output;                      ///< Output port
 
@@ -119,7 +126,7 @@ typedef struct {
     float bt_hp_b1;                     ///< b1 for bass/treble high pass
     float bt_hp_z1;                     ///< z1 for bass/treble high pass
 
-    float wow_range;                    ///< range of wow effect
+    float wow_ampl;                     ///< amplitude of wow effect
 } BollieEchopeck;
 
 
@@ -150,8 +157,8 @@ static LV2_Handle instantiate(const LV2_Descriptor * descriptor, double rate,
     self->bt_hp_b1 = 0.0f;
     self->bt_hp_z1 = 0.0f;
 
-    // WOW-rate
-    self->wow_rate = WOW/1000 * rate;
+    // WOW amplitude
+    self->wow_ampl = WOW/1000 * rate;
     return (LV2_Handle)self;
 }
 
@@ -196,6 +203,21 @@ static void connect_port(LV2_Handle instance, uint32_t port, void *data) {
         case BEP_TRIM_DRY:
             self->ctl_trim_dry = data;
             break;
+        case BEP_TRIM_HEAD_1:
+            self->playheads[0].ctl_trim = data;
+            break;
+        case BEP_TRIM_HEAD_2:
+            self->playheads[1].ctl_trim = data;
+            break;
+        case BEP_TRIM_HEAD_3:
+            self->playheads[2].ctl_trim = data;
+            break;
+        case BEP_TRIM_HEAD_4:
+            self->playheads[3].ctl_trim = data;
+            break;
+        case BEP_TRIM_LENGTH_OF_SWELL:
+            self->ctl_trim_length_of_swell = data;
+            break;
     }
 }
     
@@ -216,6 +238,8 @@ static void activate(LV2_Handle instance) {
     for (int i = 0 ; i < 4 ; ++i) {
         self->playheads[i].delay = (i+1.0f) * DELAY_MS/1000 * self->rate;
         self->playheads[i].pos = 0;
+        self->playheads[i].tgt_gain = 0;
+        self->playheads[i].cur_gain = 0;
     }
     self->lfo_x = 0;
     self->cur_length_of_swell = 0;
@@ -226,58 +250,61 @@ static void activate(LV2_Handle instance) {
 }
 
 static void switch_heads(BollieEchopeck* self, int sw) {
+    float trim[4];
     for (int i = 0 ; i < 4 ; ++i) {
         self->playheads[i].tgt_gain = 0;
+        float t = *self->playheads[i].ctl_trim;
+        trim[i] = t >= 0 && t <= 10.f ? t/10.f : 0.5f;
     }
 
     switch(sw) {
         case 1:
-            self->playheads[0].tgt_gain = 1;
+            self->playheads[0].tgt_gain = trim[0];
             break;
         case 2:
-            self->playheads[1].tgt_gain = 1;
+            self->playheads[1].tgt_gain = trim[1];
             break;
         case 3:
-            self->playheads[2].tgt_gain = 1;
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 4:
-            self->playheads[3].tgt_gain = 1;
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 5:
-            self->playheads[0].tgt_gain = 1;
-            self->playheads[1].tgt_gain = 1;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
             break;
         case 6:
-            self->playheads[1].tgt_gain = 1;
-            self->playheads[2].tgt_gain = 1;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 7:
-            self->playheads[2].tgt_gain = 1;
-            self->playheads[3].tgt_gain = 1;
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 8:
-            self->playheads[0].tgt_gain = 1;
-            self->playheads[2].tgt_gain = 1;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 9:
-            self->playheads[1].tgt_gain = 1;
-            self->playheads[3].tgt_gain = 1;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 10:
-            self->playheads[0].tgt_gain = 1;
-            self->playheads[1].tgt_gain = 1;
-            self->playheads[2].tgt_gain = 1;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 11:
-            self->playheads[1].tgt_gain = 1;
-            self->playheads[2].tgt_gain = 1;
-            self->playheads[3].tgt_gain = 1;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 12:
-            self->playheads[0].tgt_gain = 1;
-            self->playheads[1].tgt_gain = 1;
-            self->playheads[2].tgt_gain = 1;
-            self->playheads[3].tgt_gain = 1;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
             
     }
@@ -300,7 +327,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     float cur_bass_treble = self->cur_bass_treble;
 
     // Current selector setting
-    float ctl_select = *self->ctl_selector;
+    float ctl_selector = *self->ctl_selector;
     if (ctl_selector < 0 || ctl_selector > 2) 
         ctl_selector = 0;
 
@@ -315,14 +342,17 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     float cur_length_of_swell = self->cur_length_of_swell;
     float tgt_length_of_swell = 0;
     const float ctl_length_of_swell = *self->ctl_length_of_swell;
-    if (ctl_selector == SELECTOR_ECHO) {
+    float trim_los = *self->ctl_trim_length_of_swell;
+    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los : 8.f;
+    if (ctl_selector == MODE_ECHO) {
         tgt_length_of_swell = 0;
     }
-    else if (ctl_length_of_swell > 0 && ctl_length_of_swell < 10) {
-        tgt_length_of_swell = powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
+    else if (ctl_length_of_swell > 0.f && ctl_length_of_swell < 10.f) {
+        tgt_length_of_swell = trim_los * 
+            powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
     }
     else if (ctl_length_of_swell == 10) {
-        tgt_length_of_swell = 1;
+        tgt_length_of_swell = trim_los;
     }
 
     // Volume
@@ -353,6 +383,8 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         if (cur_bass_treble < -5 || cur_bass_treble > 5)
             cur_bass_treble = 0;
 
+        float f = 0;
+
         if (cur_bass_treble < 0) {
             // highpass
             self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5f-20000/rate));
@@ -363,7 +395,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         }
         else {
             // highpass
-            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5-f/rate));
+            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5f-f/rate));
             self->bt_hp_a0 = 1.0 + self->bt_lp_b1;
             // low pass
             self->bt_lp_b1 = exp(-2.f * M_PI * (20000/rate));
@@ -387,7 +419,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             + cur_trim_dry *0.99f;
 
         // LFO
-        float lfo_offset = self->wow_rate * sin(2 * (2* M_PI) * lfo_x / rate);
+        float lfo_offset = self->wow_ampl * sin(2 * (2* M_PI) * lfo_x / rate);
         lfo_x = lfo_x + 1 >= rate ? 0 : lfo_x+1;
 
         // Playback Heads
