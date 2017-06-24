@@ -343,7 +343,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     float tgt_length_of_swell = 0;
     const float ctl_length_of_swell = *self->ctl_length_of_swell;
     float trim_los = *self->ctl_trim_length_of_swell;
-    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los : 8.f;
+    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los/10.f : .6f;
     if (ctl_selector == MODE_ECHO) {
         tgt_length_of_swell = 0;
     }
