@@ -36,6 +36,10 @@
 #define DELAY_MS 75
 #define WOW 1.0
 
+#define MODE_ECHO 0
+#define MODE_REPEAT 1
+#define MODE_SWELL 2
+
 
 /**
 * Make a bool type available. ;)
@@ -101,9 +105,21 @@ typedef struct {
     float cur_trim_dry;                 ///< Dry volume trimmer
     float tgt_trim_dry;                 ///< Dry volume trimmer
 
+    float cur_bass_treble;              ///< Current bass/treble
+
     float fil_a0;                       ///< a0 for feedback filter
-    float fil_b1;                       ///< a0 for feedback filter
-    float fil_z1;                       ///< a0 for feedback filter
+    float fil_b1;                       ///< b1 for feedback filter
+    float fil_z1;                       ///< z1 for feedback filter
+
+    float bt_lp_a0;                     ///< a0 for bass/treble low pass
+    float bt_lp_b1;                     ///< b1 for bass/treble low pass
+    float bt_lp_z1;                     ///< z1 for bass/treble low pass
+
+    float bt_hp_a0;                     ///< a0 for bass/treble high pass
+    float bt_hp_b1;                     ///< b1 for bass/treble high pass
+    float bt_hp_z1;                     ///< z1 for bass/treble high pass
+
+    float wow_range;                    ///< range of wow effect
 } BollieEchopeck;
 
 
@@ -120,6 +136,22 @@ static LV2_Handle instantiate(const LV2_Descriptor * descriptor, double rate,
     // Memorize sample rate for calculation
     self->rate = rate;
 
+    // Feedback filter
+    self->fil_b1 = exp(-2.0 * M_PI * (950 / rate));
+    self->fil_a0 = 1.0f - self->fil_b1;
+    self->fil_z1 = 0.0f;
+
+    // bass/treble filters
+    self->bt_lp_a0 = 1.0f;
+    self->bt_lp_b1 = 0.0f;
+    self->bt_lp_z1 = 0.0f;
+
+    self->bt_hp_a0 = 1.0f;
+    self->bt_hp_b1 = 0.0f;
+    self->bt_hp_z1 = 0.0f;
+
+    // WOW-rate
+    self->wow_rate = WOW/1000 * rate;
     return (LV2_Handle)self;
 }
 
@@ -189,10 +221,8 @@ static void activate(LV2_Handle instance) {
     self->cur_length_of_swell = 0;
     self->cur_switch = 0;
     self->cur_trim_dry = 0;
+    self->cur_bass_treble = 0;
 
-    self->fil_b1 = exp(-2.0 * M_PI * (950 / self->rate));
-    self->fil_a0 = 1.0 - self->fil_b1;
-    self->fil_z1 = 0.0f;
 }
 
 static void switch_heads(BollieEchopeck* self, int sw) {
@@ -266,19 +296,29 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     int pos_w = self->pos_w;
     double rate = self->rate;
     double lfo_x = self->lfo_x;
+    float cur_switch = self->cur_switch;
+    float cur_bass_treble = self->cur_bass_treble;
+
+    // Current selector setting
+    float ctl_select = *self->ctl_selector;
+    if (ctl_selector < 0 || ctl_selector > 2) 
+        ctl_selector = 0;
 
     // Current switch setting
-    if (*self->ctl_switch != self->cur_switch) {
-        float s = *self->ctl_switch;
-        if (s < 1 || s > 12) s = 1;
-        switch_heads(self, *self->ctl_switch);
+    if (*self->ctl_switch != cur_switch) {
+        if (cur_switch < 1 || cur_switch > 12) 
+            cur_switch = 1;
+        switch_heads(self, cur_switch);
     }
 
     // Length of Swell
     float cur_length_of_swell = self->cur_length_of_swell;
     float tgt_length_of_swell = 0;
     const float ctl_length_of_swell = *self->ctl_length_of_swell;
-    if (ctl_length_of_swell > 0 && ctl_length_of_swell < 10) {
+    if (ctl_selector == SELECTOR_ECHO) {
+        tgt_length_of_swell = 0;
+    }
+    else if (ctl_length_of_swell > 0 && ctl_length_of_swell < 10) {
         tgt_length_of_swell = powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
     }
     else if (ctl_length_of_swell == 10) {
@@ -296,7 +336,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         tgt_volume = 1;
     }
 
-    // Volume
+    // Trim dry
     float cur_trim_dry = self->cur_trim_dry;
     float tgt_trim_dry = 0;
     const float ctl_trim_dry = *self->ctl_trim_dry;
@@ -305,6 +345,30 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     }
     else if (ctl_trim_dry == 10) {
         tgt_trim_dry = 1;
+    }
+
+    // Bass/Treble
+    if (*self->ctl_bass_treble != cur_bass_treble) {
+        cur_bass_treble = *self->ctl_bass_treble;
+        if (cur_bass_treble < -5 || cur_bass_treble > 5)
+            cur_bass_treble = 0;
+
+        if (cur_bass_treble < 0) {
+            // highpass
+            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5f-20000/rate));
+            self->bt_hp_a0 = 1.0 + self->bt_lp_b1;
+            // low pass
+            self->bt_lp_b1 = exp(-2.f * M_PI * (f/rate));
+            self->bt_lp_a0 = 1.0 - self->bt_lp_b1;
+        }
+        else {
+            // highpass
+            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5-f/rate));
+            self->bt_hp_a0 = 1.0 + self->bt_lp_b1;
+            // low pass
+            self->bt_lp_b1 = exp(-2.f * M_PI * (20000/rate));
+            self->bt_lp_a0 = 1.0 - self->bt_lp_b1;
+        }
     }
 
     // Loop over the block of audio we got
@@ -323,8 +387,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             + cur_trim_dry *0.99f;
 
         // LFO
-        float w = WOW/1000 * rate;
-        float lfo_offset = w * sin(2 * (2* M_PI) * lfo_x / rate);
+        float lfo_offset = self->wow_rate * sin(2 * (2* M_PI) * lfo_x / rate);
         lfo_x = lfo_x + 1 >= rate ? 0 : lfo_x+1;
 
         // Playback Heads
@@ -366,6 +429,8 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         self->output[i] = self->input[i] * cur_trim_dry + sample_out * cur_volume;
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
     }
+
+    self->cur_switch = cur_switch;
     self->cur_length_of_swell = cur_length_of_swell;
     self->cur_volume = cur_volume;
     self->cur_trim_dry = cur_trim_dry;
