@@ -271,40 +271,40 @@ static void switch_heads(BollieEchopeck* self, int sw) {
             self->playheads[3].tgt_gain = trim[3];
             break;
         case 5:
-            self->playheads[0].tgt_gain = trim[0];
-            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[0].tgt_gain = trim[0] * 0.5f;
+            self->playheads[1].tgt_gain = trim[1] * 0.5f;
             break;
         case 6:
-            self->playheads[1].tgt_gain = trim[1];
-            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[1].tgt_gain = trim[1] * 0.5f;
+            self->playheads[2].tgt_gain = trim[2] * 0.5f;
             break;
         case 7:
-            self->playheads[2].tgt_gain = trim[2];
-            self->playheads[3].tgt_gain = trim[3];
+            self->playheads[2].tgt_gain = trim[2] * 0.5f;
+            self->playheads[3].tgt_gain = trim[3] * 0.5f;
             break;
         case 8:
-            self->playheads[0].tgt_gain = trim[0];
-            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[0].tgt_gain = trim[0] * 0.5f;
+            self->playheads[2].tgt_gain = trim[2] * 0.5f;
             break;
         case 9:
-            self->playheads[1].tgt_gain = trim[1];
-            self->playheads[3].tgt_gain = trim[3];
+            self->playheads[1].tgt_gain = trim[1] * 0.5f;
+            self->playheads[3].tgt_gain = trim[3] * 0.5f;
             break;
         case 10:
-            self->playheads[0].tgt_gain = trim[0];
-            self->playheads[1].tgt_gain = trim[1];
-            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[0].tgt_gain = trim[0] * 0.32f;
+            self->playheads[1].tgt_gain = trim[1] * 0.32f;
+            self->playheads[2].tgt_gain = trim[2] * 0.32f;
             break;
         case 11:
-            self->playheads[1].tgt_gain = trim[1];
-            self->playheads[2].tgt_gain = trim[2];
-            self->playheads[3].tgt_gain = trim[3];
+            self->playheads[1].tgt_gain = trim[1] * 0.32f;
+            self->playheads[2].tgt_gain = trim[2] * 0.32f;
+            self->playheads[3].tgt_gain = trim[3] * 0.32f;
             break;
         case 12:
-            self->playheads[0].tgt_gain = trim[0];
-            self->playheads[1].tgt_gain = trim[1];
-            self->playheads[2].tgt_gain = trim[2];
-            self->playheads[3].tgt_gain = trim[3];
+            self->playheads[0].tgt_gain = trim[0] * 0.25f;
+            self->playheads[1].tgt_gain = trim[1] * 0.25f;
+            self->playheads[2].tgt_gain = trim[2] * 0.25f;
+            self->playheads[3].tgt_gain = trim[3] * 0.25f;
             break;
             
     }
