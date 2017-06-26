@@ -35,11 +35,12 @@
 #define MAX_TAPE_LEN 192001
 #define DELAY_MS 75
 #define WOW 1.0
+#define LIM_ATTACK 10
+#define LIM_RELEASE 100
 
 #define MODE_ECHO 0
 #define MODE_REPEAT 1
 #define MODE_SWELL 2
-
 
 /**
 * Make a bool type available. ;)
@@ -127,6 +128,10 @@ typedef struct {
     float bt_hp_z1;                     ///< z1 for bass/treble high pass
 
     float wow_ampl;                     ///< amplitude of wow effect
+
+    float lim_attack;                   ///< limiter's attack time
+    float lim_release;                  ///< limiter's release time
+    float lim_envelope;                 ///< limiter's envelope
 } BollieEchopeck;
 
 
@@ -159,6 +164,10 @@ static LV2_Handle instantiate(const LV2_Descriptor * descriptor, double rate,
 
     // WOW amplitude
     self->wow_ampl = WOW/1000 * rate;
+
+    // limiter
+    self->lim_attack  = powf(0.01f, 1.0f / (LIM_ATTACK * rate * 0.001) );
+    self->lim_release = powf(0.01f, 1.0f / (LIM_RELEASE * rate * 0.001) );
     return (LV2_Handle)self;
 }
 
@@ -271,42 +280,41 @@ static void switch_heads(BollieEchopeck* self, int sw) {
             self->playheads[3].tgt_gain = trim[3];
             break;
         case 5:
-            self->playheads[0].tgt_gain = trim[0] * 0.5f;
-            self->playheads[1].tgt_gain = trim[1] * 0.5f;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
             break;
         case 6:
-            self->playheads[1].tgt_gain = trim[1] * 0.5f;
-            self->playheads[2].tgt_gain = trim[2] * 0.5f;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 7:
-            self->playheads[2].tgt_gain = trim[2] * 0.5f;
-            self->playheads[3].tgt_gain = trim[3] * 0.5f;
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 8:
-            self->playheads[0].tgt_gain = trim[0] * 0.5f;
-            self->playheads[2].tgt_gain = trim[2] * 0.5f;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 9:
-            self->playheads[1].tgt_gain = trim[1] * 0.5f;
-            self->playheads[3].tgt_gain = trim[3] * 0.5f;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 10:
-            self->playheads[0].tgt_gain = trim[0] * 0.32f;
-            self->playheads[1].tgt_gain = trim[1] * 0.32f;
-            self->playheads[2].tgt_gain = trim[2] * 0.32f;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
             break;
         case 11:
-            self->playheads[1].tgt_gain = trim[1] * 0.32f;
-            self->playheads[2].tgt_gain = trim[2] * 0.32f;
-            self->playheads[3].tgt_gain = trim[3] * 0.32f;
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
         case 12:
-            self->playheads[0].tgt_gain = trim[0] * 0.25f;
-            self->playheads[1].tgt_gain = trim[1] * 0.25f;
-            self->playheads[2].tgt_gain = trim[2] * 0.25f;
-            self->playheads[3].tgt_gain = trim[3] * 0.25f;
+            self->playheads[0].tgt_gain = trim[0];
+            self->playheads[1].tgt_gain = trim[1];
+            self->playheads[2].tgt_gain = trim[2];
+            self->playheads[3].tgt_gain = trim[3];
             break;
-            
     }
 }
 
@@ -325,6 +333,9 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     double lfo_x = self->lfo_x;
     float cur_switch = self->cur_switch;
     float cur_bass_treble = self->cur_bass_treble;
+    float lim_envelope = self->lim_envelope;
+    float lim_attack = self->lim_attack;
+    float lim_release = self->lim_release;
 
     // Current selector setting
     float ctl_selector = *self->ctl_selector;
@@ -339,21 +350,22 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         switch_heads(self, cur_switch);
     }
 
+    // Trim length of swell
+    float trim_los = *self->ctl_trim_length_of_swell;
+    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los/10.f : .6f;
+
     // Length of Swell
     float cur_length_of_swell = self->cur_length_of_swell;
     float tgt_length_of_swell = 0;
     const float ctl_length_of_swell = *self->ctl_length_of_swell;
-    float trim_los = *self->ctl_trim_length_of_swell;
-    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los/10.f : .6f;
     if (ctl_selector == MODE_ECHO) {
         tgt_length_of_swell = 0;
     }
     else if (ctl_length_of_swell > 0.f && ctl_length_of_swell < 10.f) {
-        tgt_length_of_swell = trim_los * 
-            powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
+        tgt_length_of_swell = powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
     }
     else if (ctl_length_of_swell == 10) {
-        tgt_length_of_swell = trim_los;
+        tgt_length_of_swell = 1.0f;
     }
 
     // Volume
@@ -364,7 +376,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         tgt_volume = powf(10.0f, (ctl_volume-10) * 0.2f);
     }
     else if (ctl_volume == 10) {
-        tgt_volume = 1;
+        tgt_volume = 1.0f;
     }
 
     // Trim dry
@@ -375,10 +387,10 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         tgt_trim_dry = powf(10.0f, (ctl_trim_dry-10) * 0.2f);
     }
     else if (ctl_trim_dry == 10) {
-        tgt_trim_dry = 1;
+        tgt_trim_dry = 1.0f;
     }
 
-    // Bass/Treble
+    // Bass/Treble - only recalculate if it has changed
     if (*self->ctl_bass_treble != cur_bass_treble) {
         cur_bass_treble = *self->ctl_bass_treble;
         if (cur_bass_treble < -5 || cur_bass_treble > 5)
@@ -445,31 +457,45 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
                out = self->buffer[(int)x1]; 
             }
             else {
-                // Rule out edge cases
-                float y1 = self->buffer[(int)x1];
+                float a1 = self->buffer[(int)x1];
                 int x2 = (int)x1+1;
-                float y2 = self->buffer[x2 >= MAX_TAPE_LEN ? 0 : x2];
-                out = y1 + (y2-y1)/(x2-x1) * (x-x1);
+                // Rule out edge cases
+                float a2 = self->buffer[x2 >= MAX_TAPE_LEN ? 0 : x2];
+                // Linear interpolation is done here
+                out = a1 + (a2-a1)/(x2-x1) * (x-x1);
             }
+            // Summing the delayed samples
             sample_out += out * self->playheads[h].cur_gain;
         }
+
+        // Limiting the delayed sample
+        float v = fabs(sample_out);
+        lim_envelope = (v > lim_envelope ? lim_attack : lim_release)
+            * (lim_envelope - v) + v;
         
-        // constantly write to the buffer
-        self->fil_z1 = (sample_out * self->fil_a0 
-            + self->fil_z1 * self->fil_b1);
+        if (lim_envelope > 1) sample_out /= lim_envelope;
+        
+        // Low pass filter the delayed sample
+        self->fil_z1 = (sample_out * self->fil_a0 + self->fil_z1 * self->fil_b1);
+
+        // Sum the current input sample with the filtered delay sum
         self->buffer[pos_w] = sample_in + self->fil_z1 * cur_length_of_swell;
 
+        // Sum input and delayed sample and write it into the output buffer
         self->output[i] = self->input[i] * cur_trim_dry + sample_out * cur_volume;
+        
+        // Calculate the new write position and wrap around if needed
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
     }
 
+    // Push stuff back onto the heap
     self->cur_switch = cur_switch;
     self->cur_length_of_swell = cur_length_of_swell;
     self->cur_volume = cur_volume;
     self->cur_trim_dry = cur_trim_dry;
     self->pos_w = pos_w;
     self->lfo_x = lfo_x;
-
+    self->lim_envelope = lim_envelope;
 }
 
 
