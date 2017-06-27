@@ -115,9 +115,13 @@ typedef struct {
 
     float cur_bass_treble;              ///< Current bass/treble
 
-    float fil_a0;                       ///< a0 for feedback filter
-    float fil_b1;                       ///< b1 for feedback filter
-    float fil_z1;                       ///< z1 for feedback filter
+    float fb_lp_a0;                       ///< a0 for feedback filter
+    float fb_lp_b1;                       ///< b1 for feedback filter
+    float fb_lp_z1;                       ///< z1 for feedback filter
+
+    float fb_hp_a0;                       ///< a0 for feedback filter
+    float fb_hp_b1;                       ///< b1 for feedback filter
+    float fb_hp_z1;                       ///< z1 for feedback filter
 
     float bt_lp_a0;                     ///< a0 for bass/treble low pass
     float bt_lp_b1;                     ///< b1 for bass/treble low pass
@@ -149,9 +153,13 @@ static LV2_Handle instantiate(const LV2_Descriptor * descriptor, double rate,
     self->rate = rate;
 
     // Feedback filter
-    self->fil_b1 = exp(-2.0 * M_PI * (950 / rate));
-    self->fil_a0 = 1.0f - self->fil_b1;
-    self->fil_z1 = 0.0f;
+    self->fb_lp_b1 = exp(-2.0 * M_PI * (950 / rate));
+    self->fb_lp_a0 = 1.0f - self->fb_lp_b1;
+    self->fb_lp_z1 = 0.0f;
+
+    self->fb_hp_b1 = -exp(-2.0 * M_PI * (0.5-(950 / rate)));
+    self->fb_hp_a0 = 1.0f + self->fb_hp_b1;
+    self->fb_hp_z1 = 0.0f;
 
     // bass/treble filters
     self->bt_lp_a0 = 1.0f;
@@ -336,6 +344,12 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     float lim_envelope = self->lim_envelope;
     float lim_attack = self->lim_attack;
     float lim_release = self->lim_release;
+    float fb_lp_a0 = self->fb_lp_a0;
+    float fb_lp_b1 = self->fb_lp_b1;
+    float fb_lp_z1 = self->fb_lp_z1;
+    float fb_hp_a0 = self->fb_hp_a0;
+    float fb_hp_b1 = self->fb_hp_b1;
+    float fb_hp_z1 = self->fb_hp_z1;
 
     // Current selector setting
     float ctl_selector = *self->ctl_selector;
@@ -352,7 +366,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
 
     // Trim length of swell
     float trim_los = *self->ctl_trim_length_of_swell;
-    trim_los = trim_los > 0.f && trim_los < 10.f ? trim_los/10.f : .6f;
+    trim_los = trim_los >= 0.f && trim_los <= 10.f ? trim_los/10.f : .6f;
 
     // Length of Swell
     float cur_length_of_swell = self->cur_length_of_swell;
@@ -362,10 +376,11 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         tgt_length_of_swell = 0;
     }
     else if (ctl_length_of_swell > 0.f && ctl_length_of_swell < 10.f) {
-        tgt_length_of_swell = powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
+        tgt_length_of_swell = 
+            trim_los * powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
     }
     else if (ctl_length_of_swell == 10) {
-        tgt_length_of_swell = 1.0f;
+        tgt_length_of_swell = trim_los * 1.0f;
     }
 
     // Volume
@@ -467,22 +482,26 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             // Summing the delayed samples
             sample_out += out * self->playheads[h].cur_gain;
         }
+        
+        // Low pass filter the delayed sample
+        fb_lp_z1 = sample_out * fb_lp_a0 + fb_lp_z1 * fb_lp_b1;
+        fb_hp_z1 = fb_lp_z1 * fb_hp_a0 + fb_hp_z1 * fb_hp_b1;
 
-        // Limiting the delayed sample
-        float v = fabs(sample_out);
+        // Sum everything and limit it
+        float to_buffer = sample_in + fb_hp_z1 * cur_length_of_swell;
+
+        // Limiting feedback
+        float v = fabs(to_buffer);
         lim_envelope = (v > lim_envelope ? lim_attack : lim_release)
             * (lim_envelope - v) + v;
         
-        if (lim_envelope > 1) sample_out /= lim_envelope;
-        
-        // Low pass filter the delayed sample
-        self->fil_z1 = (sample_out * self->fil_a0 + self->fil_z1 * self->fil_b1);
+        if (lim_envelope > 1) to_buffer /= lim_envelope;
 
         // Sum the current input sample with the filtered delay sum
-        self->buffer[pos_w] = sample_in + self->fil_z1 * cur_length_of_swell;
+        self->buffer[pos_w] = to_buffer;
 
         // Sum input and delayed sample and write it into the output buffer
-        self->output[i] = self->input[i] * cur_trim_dry + sample_out * cur_volume;
+        self->output[i] = self->input[i] * cur_trim_dry + fb_hp_z1 * cur_volume;
         
         // Calculate the new write position and wrap around if needed
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
@@ -496,6 +515,12 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     self->pos_w = pos_w;
     self->lfo_x = lfo_x;
     self->lim_envelope = lim_envelope;
+    self->fb_lp_a0 = fb_lp_a0;
+    self->fb_lp_b1 = fb_lp_b1;
+    self->fb_lp_z1 = fb_lp_z1;
+    self->fb_hp_a0 = fb_hp_a0;
+    self->fb_hp_b1 = fb_hp_b1;
+    self->fb_hp_z1 = fb_hp_z1;
 }
 
 
