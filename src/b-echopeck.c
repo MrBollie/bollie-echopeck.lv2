@@ -34,7 +34,7 @@
 
 #define MAX_TAPE_LEN 192001
 #define DELAY_MS 75
-#define WOW 1.0
+#define WOW 0.5
 #define LIM_ATTACK 10
 #define LIM_RELEASE 100
 
@@ -153,11 +153,11 @@ static LV2_Handle instantiate(const LV2_Descriptor * descriptor, double rate,
     self->rate = rate;
 
     // Feedback filter
-    self->fb_lp_b1 = exp(-2.0 * M_PI * (950 / rate));
+    self->fb_lp_b1 = exp(-2.0 * M_PI * (4200 / rate));
     self->fb_lp_a0 = 1.0f - self->fb_lp_b1;
     self->fb_lp_z1 = 0.0f;
 
-    self->fb_hp_b1 = -exp(-2.0 * M_PI * (0.5-(950 / rate)));
+    self->fb_hp_b1 = -exp(-2.0 * M_PI * (0.5-(200 / rate)));
     self->fb_hp_a0 = 1.0f + self->fb_hp_b1;
     self->fb_hp_z1 = 0.0f;
 
