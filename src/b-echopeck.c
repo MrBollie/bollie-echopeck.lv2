@@ -38,6 +38,12 @@
 #define LIM_ATTACK 10
 #define LIM_RELEASE 100
 
+#define BT_BASS_MIN 100
+#define BT_BASS_MAX 7000
+
+#define BT_TREBLE_MIN 500
+#define BT_TREBLE_MAX 15000
+
 #define MODE_ECHO 0
 #define MODE_REPEAT 1
 #define MODE_SWELL 2
@@ -344,9 +350,19 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
     float lim_envelope = self->lim_envelope;
     float lim_attack = self->lim_attack;
     float lim_release = self->lim_release;
+
+    float bt_hp_a0 = self->bt_hp_a0;
+    float bt_hp_b1 = self->bt_hp_b1;
+    float bt_hp_z1 = self->bt_hp_z1;
+
+    float bt_lp_a0 = self->bt_lp_a0;
+    float bt_lp_b1 = self->bt_lp_b1;
+    float bt_lp_z1 = self->bt_lp_z1;
+
     float fb_lp_a0 = self->fb_lp_a0;
     float fb_lp_b1 = self->fb_lp_b1;
     float fb_lp_z1 = self->fb_lp_z1;
+
     float fb_hp_a0 = self->fb_hp_a0;
     float fb_hp_b1 = self->fb_hp_b1;
     float fb_hp_z1 = self->fb_hp_z1;
@@ -362,6 +378,14 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         if (cur_switch < 1 || cur_switch > 12) 
             cur_switch = 1;
         switch_heads(self, cur_switch);
+    }
+
+    if (ctl_selector == MODE_SWELL) {
+        for (int h = 0 ; h < 4 ; ++h) {
+            float tg = self->playheads[h].tgt_gain;
+            if (tg < 0.5f) tg = 0.5f;
+            self->playheads[h].tgt_gain = tg;
+        }
     }
 
     // Trim length of swell
@@ -380,7 +404,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             trim_los * powf(10.0f, (ctl_length_of_swell-10) * 0.2f);
     }
     else if (ctl_length_of_swell == 10) {
-        tgt_length_of_swell = trim_los * 1.0f;
+        tgt_length_of_swell = trim_los;
     }
 
     // Volume
@@ -411,24 +435,29 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         if (cur_bass_treble < -5 || cur_bass_treble > 5)
             cur_bass_treble = 0;
 
-        float f = 0;
+        float lf = 22000;
+        float hf = 30;
 
         if (cur_bass_treble < 0) {
-            // highpass
-            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5f-20000/rate));
-            self->bt_hp_a0 = 1.0 + self->bt_lp_b1;
-            // low pass
-            self->bt_lp_b1 = exp(-2.f * M_PI * (f/rate));
-            self->bt_lp_a0 = 1.0 - self->bt_lp_b1;
+            // Bass side -> Low pass
+            /*lf = BT_BASS_MAX - ((BT_BASS_MAX - BT_BASS_MIN) / 5.f) * 
+                (cur_bass_treble *-1);*/
+            lf = powf(10, (5.f + cur_bass_treble) * 0.82f);
         }
-        else {
-            // highpass
-            self->bt_hp_b1 = -exp(-2.f * M_PI * (0.5f-f/rate));
-            self->bt_hp_a0 = 1.0 + self->bt_lp_b1;
-            // low pass
-            self->bt_lp_b1 = exp(-2.f * M_PI * (20000/rate));
-            self->bt_lp_a0 = 1.0 - self->bt_lp_b1;
+        else if (cur_bass_treble > 0) {
+            // Treble side -> High pass
+            /*hf = BT_TREBLE_MIN + ((BT_TREBLE_MAX - BT_TREBLE_MIN) / 5.f) 
+                * cur_bass_treble;*/
+            hf = powf(10, cur_bass_treble * 0.868f);
         }
+
+        // high pass
+        bt_hp_b1 = -exp(-2.0 * M_PI * (0.5f-hf/rate));
+        bt_hp_a0 = 1.0 + bt_hp_b1;
+
+        // low pass
+        bt_lp_b1 = exp(-2.0 * M_PI * (lf/rate));
+        bt_lp_a0 = 1.0 - bt_lp_b1;
     }
 
     // Loop over the block of audio we got
@@ -483,7 +512,7 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
             sample_out += out * self->playheads[h].cur_gain;
         }
         
-        // Low pass filter the delayed sample
+        // Low/hi pass filter the delayed sample
         fb_lp_z1 = sample_out * fb_lp_a0 + fb_lp_z1 * fb_lp_b1;
         fb_hp_z1 = fb_lp_z1 * fb_hp_a0 + fb_hp_z1 * fb_hp_b1;
 
@@ -500,8 +529,13 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
         // Sum the current input sample with the filtered delay sum
         self->buffer[pos_w] = to_buffer;
 
+        // Bass/treble knob filtering
+        float sum = self->input[i] * cur_trim_dry + fb_hp_z1 * cur_volume;
+        bt_lp_z1 = sum * bt_lp_a0 + bt_lp_z1 * bt_lp_b1;
+        bt_hp_z1 = bt_lp_z1 * bt_hp_a0 + bt_hp_z1 * bt_hp_b1;
+
         // Sum input and delayed sample and write it into the output buffer
-        self->output[i] = self->input[i] * cur_trim_dry + fb_hp_z1 * cur_volume;
+        self->output[i] = bt_hp_z1;
         
         // Calculate the new write position and wrap around if needed
         pos_w = (pos_w+1 >= MAX_TAPE_LEN ? 0 : pos_w+1);
@@ -509,12 +543,21 @@ static void run(LV2_Handle instance, uint32_t n_samples) {
 
     // Push stuff back onto the heap
     self->cur_switch = cur_switch;
+    self->cur_bass_treble = cur_bass_treble;
     self->cur_length_of_swell = cur_length_of_swell;
     self->cur_volume = cur_volume;
     self->cur_trim_dry = cur_trim_dry;
     self->pos_w = pos_w;
     self->lfo_x = lfo_x;
     self->lim_envelope = lim_envelope;
+
+    self->bt_lp_a0 = bt_lp_a0;
+    self->bt_lp_b1 = bt_lp_b1;
+    self->bt_lp_z1 = bt_lp_z1;
+    self->bt_hp_a0 = bt_hp_a0;
+    self->bt_hp_b1 = bt_hp_b1;
+    self->bt_hp_z1 = bt_hp_z1;
+
     self->fb_lp_a0 = fb_lp_a0;
     self->fb_lp_b1 = fb_lp_b1;
     self->fb_lp_z1 = fb_lp_z1;
